@@ -11,17 +11,19 @@ interface Bill {
   date: string;
   amount: number;
   status: BillStatus;
+  rejectReason?: string;
 }
 
-const mockBills: Bill[] = [
+const initialMockBills: Bill[] = [
   { id: 'B-1001', vendor: 'Amazon Web Services', date: '2023-10-01', amount: 45000, status: 'Pending Accounts' },
   { id: 'B-1002', vendor: 'BlueDart Courier', date: '2023-10-02', amount: 1250, status: 'Approved' },
   { id: 'B-1003', vendor: 'Reliance Digital', date: '2023-10-03', amount: 120000, status: 'Pending MD' },
-  { id: 'B-1004', vendor: 'Office Supplies Co.', date: '2023-10-04', amount: 8500, status: 'Rejected' },
+  { id: 'B-1004', vendor: 'Office Supplies Co.', date: '2023-10-04', amount: 8500, status: 'Rejected', rejectReason: 'Missing GST number' },
   { id: 'B-1005', vendor: 'Uber Travel', date: '2023-10-05', amount: 3200, status: 'Pending Accounts' },
 ];
 
 export default function App() {
+  const [bills, setBills] = useState<Bill[]>(initialMockBills);
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [selectedBillId, setSelectedBillId] = useState<string | null>(null);
 
@@ -29,6 +31,13 @@ export default function App() {
     setCurrentView(view);
     setSelectedBillId(billId);
   };
+
+  const handleUpdateStatus = (billId: string, status: BillStatus, reason?: string) => {
+    setBills(prev => prev.map(b => b.id === billId ? { ...b, status, rejectReason: reason } : b));
+    setCurrentView('dashboard');
+  };
+
+  const selectedBill = bills.find(b => b.id === selectedBillId);
 
   return (
     <div className="app-container">
@@ -62,9 +71,9 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="main-content">
-        {currentView === 'dashboard' && <DashboardView onNavigate={handleNavigate} />}
+        {currentView === 'dashboard' && <DashboardView bills={bills} onNavigate={handleNavigate} />}
         {currentView === 'upload' && <UploadView />}
-        {currentView === 'review' && <ReviewView billId={selectedBillId} onNavigate={handleNavigate} />}
+        {currentView === 'review' && <ReviewView bill={selectedBill} onNavigate={handleNavigate} onUpdateStatus={handleUpdateStatus} />}
       </main>
     </div>
   );
@@ -73,7 +82,7 @@ export default function App() {
 // -----------------------------------------
 // View A: The Dashboard (Inbox)
 // -----------------------------------------
-function DashboardView({ onNavigate }: { onNavigate: (view: ViewState, billId: string | null) => void }) {
+function DashboardView({ bills, onNavigate }: { bills: Bill[], onNavigate: (view: ViewState, billId: string | null) => void }) {
   const getBadgeClass = (status: BillStatus) => {
     switch (status) {
       case 'Pending Accounts': return 'badge-yellow';
@@ -104,7 +113,7 @@ function DashboardView({ onNavigate }: { onNavigate: (view: ViewState, billId: s
             </tr>
           </thead>
           <tbody>
-            {mockBills.map((bill) => (
+            {bills.map((bill) => (
               <tr key={bill.id}>
                 <td className="font-medium text-dark">{bill.id}</td>
                 <td>{bill.vendor}</td>
@@ -136,9 +145,27 @@ function DashboardView({ onNavigate }: { onNavigate: (view: ViewState, billId: s
 // View B: The Scan & Upload Form
 // -----------------------------------------
 function UploadView() {
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedFile) {
+      alert('Please select a file first!');
+      return;
+    }
     alert('Bill submitted successfully to Accounts!');
+    setSelectedFile(null);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setSelectedFile(e.target.files[0]);
+    }
+  };
+
+  const handleZoneClick = () => {
+    fileInputRef.current?.click();
   };
 
   return (
@@ -150,7 +177,14 @@ function UploadView() {
 
       <div className="upload-card">
         {/* Drag & Drop Box */}
-        <div className="drag-drop-zone">
+        <div className="drag-drop-zone" onClick={handleZoneClick} style={{ cursor: 'pointer' }}>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            accept="image/*,application/pdf"
+            style={{ display: 'none' }}
+          />
           <div className="upload-icon">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -158,9 +192,17 @@ function UploadView() {
               <line x1="12" y1="3" x2="12" y2="15"></line>
             </svg>
           </div>
-          <h3>Drag & Drop Scanned Image</h3>
-          <p>or <span className="text-primary cursor-pointer" style={{ cursor: 'pointer' }}>click to browse files</span></p>
-          <span className="file-hint">Supports PDF, JPG, PNG up to 10MB</span>
+          {selectedFile ? (
+            <div style={{ marginTop: '1rem', color: 'var(--primary-color)', fontWeight: 500 }}>
+              Selected: {selectedFile.name}
+            </div>
+          ) : (
+            <>
+              <h3>Drag & Drop Scanned Image</h3>
+              <p>or <span className="text-primary cursor-pointer">click to browse files</span></p>
+              <span className="file-hint">Supports PDF, JPG, PNG up to 10MB</span>
+            </>
+          )}
         </div>
 
         {/* HTML Form */}
@@ -203,9 +245,33 @@ function UploadView() {
 }
 
 // -----------------------------------------
-// View C: Review Bill (Placeholder since not fully specified)
+// View C: Review Bill
 // -----------------------------------------
-function ReviewView({ billId, onNavigate }: { billId: string | null; onNavigate: (view: ViewState) => void }) {
+function ReviewView({
+  bill,
+  onNavigate,
+  onUpdateStatus
+}: {
+  bill: Bill | undefined;
+  onNavigate: (view: ViewState) => void;
+  onUpdateStatus: (billId: string, status: BillStatus, reason?: string) => void;
+}) {
+  const [rejectMode, setRejectMode] = useState(false);
+  const [reason, setReason] = useState('');
+
+  if (!bill) {
+    return (
+      <div className="view-container">
+        <button className="back-button" onClick={() => onNavigate('dashboard')}>
+          &larr; Back to Dashboard
+        </button>
+        <div className="view-header" style={{ marginTop: '1rem' }}>
+          <h2>Bill Not Found</h2>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="view-container">
       <button className="back-button" onClick={() => onNavigate('dashboard')}>
@@ -213,10 +279,96 @@ function ReviewView({ billId, onNavigate }: { billId: string | null; onNavigate:
       </button>
       <div className="view-header" style={{ marginTop: '1rem' }}>
         <h2>Review Bill</h2>
-        <p>Reviewing details for Bill ID: {billId || 'None selected'}</p>
+        <p>Reviewing details for Bill ID: {bill.id}</p>
       </div>
-      <div className="placeholder-card">
-        <p>Review interface goes here. This would typically show the scanned document alongside the entered data for verification.</p>
+      <div className="review-card" style={{ backgroundColor: 'var(--card-bg)', padding: '2rem', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
+        <div className="bill-details" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '2rem' }}>
+          <div>
+            <p className="text-secondary" style={{ fontSize: '0.875rem', marginBottom: '0.25rem' }}>Vendor</p>
+            <p className="font-medium">{bill.vendor}</p>
+          </div>
+          <div>
+            <p className="text-secondary" style={{ fontSize: '0.875rem', marginBottom: '0.25rem' }}>Date</p>
+            <p className="font-medium">{bill.date}</p>
+          </div>
+          <div>
+            <p className="text-secondary" style={{ fontSize: '0.875rem', marginBottom: '0.25rem' }}>Amount</p>
+            <p className="font-medium" style={{ fontSize: '1.25rem', color: 'var(--text-primary)' }}>₹{bill.amount.toLocaleString('en-IN')}</p>
+          </div>
+          <div>
+            <p className="text-secondary" style={{ fontSize: '0.875rem', marginBottom: '0.25rem' }}>Status</p>
+            <p className="font-medium">{bill.status}</p>
+          </div>
+        </div>
+
+        {bill.status === 'Rejected' && bill.rejectReason && (
+          <div className="reject-reason-box" style={{ padding: '1rem', backgroundColor: '#fff3f3', borderRadius: '8px', border: '1px solid #ffcdd2', marginBottom: '2rem', color: '#d32f2f' }}>
+            <strong style={{ display: 'block', marginBottom: '0.25rem' }}>Rejection Reason:</strong>
+            {bill.rejectReason}
+          </div>
+        )}
+
+        {bill.status !== 'Rejected' && bill.status !== 'Approved' && (
+          <div className="review-actions" style={{ borderTop: '1px solid var(--border-light)', paddingTop: '1.5rem' }}>
+            {!rejectMode ? (
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button
+                  className="action-button"
+                  style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '0.5rem 1.5rem', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}
+                  onClick={() => onUpdateStatus(bill.id, 'Approved')}
+                >
+                  Approve
+                </button>
+                <button
+                  className="action-button"
+                  style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '0.5rem 1.5rem', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}
+                  onClick={() => setRejectMode(true)}
+                >
+                  Reject
+                </button>
+              </div>
+            ) : (
+              <div className="reject-form" style={{ padding: '1.5rem', backgroundColor: '#fef2f2', borderRadius: '8px', border: '1px solid #fecaca' }}>
+                <label htmlFor="reason" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600, color: '#991b1b' }}>
+                  Reason for Rejection <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <textarea
+                  id="reason"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="Please provide a clear reason for rejecting this bill..."
+                  style={{ width: '100%', padding: '0.75rem', minHeight: '100px', borderRadius: '6px', border: '1px solid #fca5a5', marginBottom: '1rem', fontFamily: 'inherit', resize: 'vertical' }}
+                  required
+                />
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <button
+                    className="action-button"
+                    style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '0.5rem 1.5rem', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}
+                    onClick={() => {
+                      if (reason.trim()) {
+                        onUpdateStatus(bill.id, 'Rejected', reason);
+                      } else {
+                        alert('Please provide a reason for rejection.');
+                      }
+                    }}
+                  >
+                    Confirm Reject
+                  </button>
+                  <button
+                    className="action-button"
+                    style={{ backgroundColor: 'transparent', color: '#4b5563', border: '1px solid #d1d5db', padding: '0.5rem 1.5rem', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}
+                    onClick={() => {
+                      setRejectMode(false);
+                      setReason('');
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
